@@ -47,6 +47,11 @@ class Candidate
      */
     private $notes;
 
+    /**
+     * @ORM\Column(type="string", length=255)
+     */
+    private $cv;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -120,6 +125,18 @@ class Candidate
     public function setNotes(string $notes): self
     {
         $this->notes = $notes;
+
+        return $this;
+    }
+
+    public function getCv(): ?string
+    {
+        return $this->cv;
+    }
+
+    public function setCv(string $cv): self
+    {
+        $this->cv = $cv;
 
         return $this;
     }
