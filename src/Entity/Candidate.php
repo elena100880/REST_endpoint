@@ -38,12 +38,12 @@ class Candidate
     private $birth;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="string", length=255, nullable=true)
      */
     private $tag;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="string", length=255, nullable=true)
      */
     private $notes;
 
@@ -129,12 +129,12 @@ class Candidate
         return $this;
     }
 
-    public function getCv(): ?string
+    public function getCv()
     {
         return $this->cv;
     }
 
-    public function setCv(string $cv): self
+    public function setCv($cv): self
     {
         $this->cv = $cv;
 
