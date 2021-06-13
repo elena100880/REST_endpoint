@@ -35,9 +35,9 @@ class CandidateController extends AbstractController
          * 
          *      "sorting": {         //  1 - ASC, 2 - DESC, 0 - without sorting by this field; Only the last field with 1or2 values defines the order;
          *                          //I asume that we can order by 3 below fields.
-         *          "first_name": 2,  
-         *          "last_name": 0,
-         *          'tag': 0
+         *          "1": {"first_name": 3},  
+         *          "2": {"last_name": 2},
+         *          "3": {"tag": 2}
          *       },   
          *        
          *      //show or not tag and notes: 1 -  show, 0 - not show
@@ -68,20 +68,25 @@ class CandidateController extends AbstractController
 
         if (valid_json($json)) $data = json_decode($json, $associative=true); ;
        
-
         if (!isset($data['phrase'])) throw new OutOfBoundsException ("No valid record for PHRASE");
         if (strlen($data['phrase'])> 2000 ) throw new LengthException ("Invalid length of PHRASE");
         else $phrase = $data['phrase'];
-     
-        
+             
         if (!isset($data['date1']) or  !isset($data['date2']) ) throw new OutOfBoundsException ("No valid key for date");
         if ( valid_date($data['date1']) and valid_date($data['date2']) ) {$date1 = $data['date1']; $date2 = $data['date2'];}
-        
 
-    /*    if (!isset($data['sorting']['first_name']) or !isset($data['sorting']['last_name']) or !isset($data['sorting']['tag'] )) throw new OutOfBoundsException ("No valid key for sorting field");
-        if ( !in_array($data['sorting']['first_name'], [0,1,2]) or !in_array($data['sorting']['last_name'], [0,1,2] ) or !in_array($data['sorting']['tag'], [0,1,2] ) ) throw new \RangeException ("Invalid sorting values");*/
         
-
+        foreach ($data['sorting'] as $i=>$value) {
+            if ( !in_array  (
+                                key($data['sorting'][$i]), ["first_name","last_name", "tag"]
+                            ) 
+                ) throw new \RangeException ("Invalid sorting fields");
+            if ( !in_array (
+                                $data['sorting'][$i][key($data['sorting'][$i])], [0,1,2] 
+                            ) 
+                ) throw new \RangeException ("Invalid sorting values");
+        }
+       
         if (!isset($data['tag']) or  !isset($data['notes']) ) throw new OutOfBoundsException ("No record of TAG/NOTES");
         if ( !in_array($data['tag'], [0,1]) or !in_array($data['notes'], [0,1] ) ) throw new \RangeException ("Invalid tag/notes values");
                      
@@ -102,7 +107,7 @@ class CandidateController extends AbstractController
 
                 */
                 
-                $arrayOfCandidatesId = [1, 2, 3, 4, 5, 6,7,8,9,10,11,12];
+                $arrayOfCandidatesId = [1,2,3,4,5,6,7,8,9,10,11,12];
                 return $arrayOfCandidatesId;
         }
         $arrayOfCandidatesId = candidate_elastic_search($phrase, $date1, $date2);
@@ -114,21 +119,15 @@ class CandidateController extends AbstractController
                                         ->from('App\Entity\Candidate', 'c')
                                         ->setParameter('ids', $arrayOfCandidatesId)
                                         ->where('c.id in (:ids)');
-        if ( $data['sorting'][1][key($data['sorting'][1])] == 1 ) $queryBuilder = $queryBuilder->orderBy('c.'.key($data['sorting'][1]), 'ASC');
-        if ( $data['sorting'][1][key($data['sorting'][1])] == 2) $queryBuilder = $queryBuilder->orderBy('c.'.key($data['sorting'][1]), 'DESC');
-
-        if ( $data['sorting'][2][key($data['sorting'][2])] == 1) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][2]), 'ASC');
-        if ( $data['sorting'][2][key($data['sorting'][2])] == 2) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][2]), 'DESC');
-        
-        if ( $data['sorting'][3][key($data['sorting'][3])] == 1) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][3]), 'ASC');
-        if ( $data['sorting'][3][key($data['sorting'][3])] == 2) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][3]), 'DESC');
-
-         
-        $candidates = $queryBuilder->getQuery()->getResult();
+        foreach ($data['sorting'] as $i=>$value) {
+            if ( $data['sorting'][$i][key($data['sorting'][$i])] == 1 ) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][$i]), 'ASC');
+            if ( $data['sorting'][$i][key($data['sorting'][$i])] == 2) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][$i]), 'DESC');
+        }
+        $candidates = $queryBuilder->getQuery()->getResult(); //TODO - pagination
 
 //creation return data:
         $returnArray=[];
-        foreach($candidates as $candidate) {       
+        foreach($candidates as $candidate) {          //TODO - pagination  
             
             $element = [    'email' => $candidate->getEmail(),
                             'firstName' => $candidate->getFirstName(),
@@ -140,6 +139,6 @@ class CandidateController extends AbstractController
             array_push($returnArray, $element);
         }   
 
-        return $this->json($returnArray);
+        return $this->json($returnArray);       //TODO - pagination
     }
 }
