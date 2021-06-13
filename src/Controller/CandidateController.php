@@ -21,7 +21,7 @@ use Doctrine\ORM\EntityManagerInterface;
 
 class CandidateController extends AbstractController
 {
-    #[Route('/candidate', name: 'candidate', methods: ['POST', 'GET'])]
+    #[Route('/candidate', name: 'candidate', methods: ['POST'])]
      public function search_candidate(Request $request): Response
     {
         /*
@@ -33,11 +33,11 @@ class CandidateController extends AbstractController
          *      "date1": "1990-08-10",   //or 0 if not chosen
          *      "date2" : 0,
          * 
-         *      "sorting": {         //  1 - ASC, 2 - DESC, 0 - without sorting by this field; Only the last field with 1or2 values defines the order;
+         *      "sorting": {         //  1 - ASC, 2 - DESC, 0 - without sorting by this field; EARLIER field is more SENIOR in ordering;
          *                          //I asume that we can order by 3 below fields.
-         *          "1": {"first_name": 3},  
-         *          "2": {"last_name": 2},
-         *          "3": {"tag": 2}
+         *          "1": {"first_name": "ASC"},  
+         *          "2": {"last_name": "DESC"},
+         *          "3": {"tag": 0}
          *       },   
          *        
          *      //show or not tag and notes: 1 -  show, 0 - not show
@@ -107,38 +107,36 @@ class CandidateController extends AbstractController
 
                 */
                 
-                $arrayOfCandidatesId = [1,2,3,4,5,6,7,8,9,10,11,12];
+                $arrayOfCandidatesId = [1,2,3,4,5,6];
                 return $arrayOfCandidatesId;
         }
         $arrayOfCandidatesId = candidate_elastic_search($phrase, $date1, $date2);
 
-//selecting Candidates from DB by ID and ordering:        
-        $entityManager = $this->getDoctrine()->getManager();
-        $queryBuilder = $entityManager->createQueryBuilder()
-                                        ->select('c')
-                                        ->from('App\Entity\Candidate', 'c')
-                                        ->setParameter('ids', $arrayOfCandidatesId)
-                                        ->where('c.id in (:ids)');
+//selecting needed columns from Candidates by ID and ordering:        
+        $order = [];
         foreach ($data['sorting'] as $i=>$value) {
-            if ( $data['sorting'][$i][key($data['sorting'][$i])] == 1 ) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][$i]), 'ASC');
-            if ( $data['sorting'][$i][key($data['sorting'][$i])] == 2) $queryBuilder = $queryBuilder->addOrderBy('c.'.key($data['sorting'][$i]), 'DESC');
+            if ( $data['sorting'][$i][key(  $data['sorting'][$i] )] == 1 ) $order[$i] = 'c.'.key($data['sorting'][$i]).' ASC';
+            if ( $data['sorting'][$i][key(  $data['sorting'][$i] )] == 2 ) $order[$i] = 'c.'.key($data['sorting'][$i]).' DESC';
         }
-        $candidates = $queryBuilder->getQuery()->getResult(); //TODO - pagination
+        $orderBy = (empty($order) ) ? '' : 'ORDER BY '.implode(', ', $order);
+       
+        $optionalColumns = [];
+        if ($data['tag'] == 1) array_push($optionalColumns,', c.tag');
+        if ($data['notes'] == 1) array_push($optionalColumns,', c.notes');
+        $stringOptionalColumns = implode('', $optionalColumns);
 
-//creation return data:
-        $returnArray=[];
-        foreach($candidates as $candidate) {          //TODO - pagination  
-            
-            $element = [    'email' => $candidate->getEmail(),
-                            'firstName' => $candidate->getFirstName(),
-                            'lastName' => $candidate->getLastName()
-                        ];
-            if ($data['tag'] == 1) array_push($element, ['tag' => $candidate->getTag()] );
-            if ($data['notes'] == 1) array_push($element, ['notes' => $candidate->getNotes()] );
-            
-            array_push($returnArray, $element);
-        }   
+        $dql = "SELECT c.email, c.first_name, c.last_name $stringOptionalColumns
+                FROM App\Entity\Candidate c 
+                WHERE c.id IN (:ids) 
+                $orderBy";
 
-        return $this->json($returnArray);       //TODO - pagination
+        $entityManager = $this->getDoctrine()->getManager();        
+        $DQLquery = $entityManager->createQuery($dql);
+        $DQLquery->setParameter('ids', $arrayOfCandidatesId);
+        
+        $result = $DQLquery->getResult();   //TODO - pagination
+    
+
+        return $this->json($result);       //TODO - pagination
     }
 }
