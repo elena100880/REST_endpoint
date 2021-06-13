@@ -51,31 +51,31 @@ class CandidateController extends AbstractController
 // some VALIDATION - valid json string, valid "phrase" (<2000 ), other records validation
         //I asume, that processing the below Exceptions are at some SCRIPT's side, which sends Request and gets Response from this endpoint
         
-        function valid_json($string)
+        function valid_json($string)  //https://stackoverflow.com/questions/6041741/fastest-way-to-check-if-a-string-is-json-in-php
         {
             json_decode($string);
-            if (json_last_error() === 0) return true;
-            else throw new \JsonException ('Invalid json');
+            return json_last_error() === 0;
         }
 
         function valid_date($date) {   //based on this source:https://stackoverflow.com/questions/19271381/correctly-determine-if-date-string-is-a-valid-date-in-that-format
             
             $dateAsObject = \DateTime::createFromFormat('Y-m-d', $date);
-            if ( ($dateAsObject) and ($dateAsObject->format('Y-m-d') === $date) or $date == 0) return true;
-            else throw new OutOfBoundsException ("Invalid date value");
+            return ( ($dateAsObject) and ($dateAsObject->format('Y-m-d') === $date) or $date == 0  );
+            //else throw new OutOfBoundsException ("Invalid date value");
         }
 
-
-        if (valid_json($json)) $data = json_decode($json, $associative=true); ;
+    try 
+    {
+        $data = (valid_json($json)) ? json_decode($json, true) : throw new JsonException('Invalid json'); 
        
-        if (!isset($data['phrase'])) throw new OutOfBoundsException ("No valid record for PHRASE");
-        if (strlen($data['phrase'])> 2000 ) throw new LengthException ("Invalid length of PHRASE");
-        else $phrase = $data['phrase'];
-             
+        if (!isset($data['phrase'])) throw new OutOfBoundsException('Invalid key for PHRASE');
+        $phrase = (strlen($data['phrase']) < 2000 ) ? $data['phrase'] : throw new \RangeException ("Invalid length of PHRASE");
+                     
         if (!isset($data['date1']) or  !isset($data['date2']) ) throw new OutOfBoundsException ("No valid key for date");
         if ( valid_date($data['date1']) and valid_date($data['date2']) ) {$date1 = $data['date1']; $date2 = $data['date2'];}
-
+        else throw new \RangeException ("Invalid value of date");
         
+        if (!isset($data['sorting']) ) throw new OutOfBoundsException ("No valid key for sorting arrays");
         foreach ($data['sorting'] as $i=>$value) {
             if ( !in_array  (
                                 key($data['sorting'][$i]), ["first_name","last_name", "tag"]
@@ -89,7 +89,10 @@ class CandidateController extends AbstractController
        
         if (!isset($data['tag']) or  !isset($data['notes']) ) throw new OutOfBoundsException ("No record of TAG/NOTES");
         if ( !in_array($data['tag'], [0,1]) or !in_array($data['notes'], [0,1] ) ) throw new \RangeException ("Invalid tag/notes values");
-                     
+    }
+    catch (\Exception $e) {
+        return new Response ($e->getMessage(), Response::HTTP_BAD_REQUEST);
+    }
 
 //ElasticSearch for Candidates:
         function candidate_elastic_search ($phrase, $date1, $date2) 
@@ -131,8 +134,8 @@ class CandidateController extends AbstractController
                 $orderBy";
 
         $entityManager = $this->getDoctrine()->getManager();        
-        $DQLquery = $entityManager->createQuery($dql);
-        $DQLquery->setParameter('ids', $arrayOfCandidatesId);
+        $DQLquery = $entityManager  ->createQuery($dql)
+                                    ->setParameter('ids', $arrayOfCandidatesId);
         
         $result = $DQLquery->getResult();   //TODO - pagination
     
