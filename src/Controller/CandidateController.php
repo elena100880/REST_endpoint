@@ -53,10 +53,7 @@ class CandidateController extends AbstractController
         $json = file_get_contents('php://input');
 
 // some VALIDATION - valid json string, valid "phrase" (<2000 ), other records validation
-        //I asume, that processing the below Exceptions are at some SCRIPT's side, which sends Request and gets Response from this endpoint
-        
-        function valid_json($string)  //https://stackoverflow.com/questions/6041741/fastest-way-to-check-if-a-string-is-json-in-php
-        {
+        function valid_json($string)  {  //https://stackoverflow.com/questions/6041741/fastest-way-to-check-if-a-string-is-json-in-php
             json_decode($string);
             return json_last_error() === 0;
         }
@@ -65,7 +62,6 @@ class CandidateController extends AbstractController
             
             $dateAsObject = \DateTime::createFromFormat('Y-m-d', $date);
             return ( ($dateAsObject) and ($dateAsObject->format('Y-m-d') === $date) or $date == 0  );
-            //else throw new OutOfBoundsException ("Invalid date value");
         }
 
     try 
@@ -94,7 +90,8 @@ class CandidateController extends AbstractController
         if ( !is_int($data['page']) or $data['page'] == 0) throw new Exception ("Invalid value of PAGE");
         else $page = $data['page'];
 
-        if ( !is_int($data['elements']) or $data['elements'] > 20  or $data['elements'] == 0) throw new Exception ("Invalid value of ELEMENTS");
+        if ( !is_int($data['elements']) or $data['elements'] == 0) throw new Exception ("Invalid value of ELEMENTS");
+        if (  $data['elements'] > 20 ) throw new Exception ("Over limit request of ELEMENTS");
         else $elementsPerPage = $data['elements'];
 
     }
@@ -138,17 +135,14 @@ class CandidateController extends AbstractController
         $entityManager = $this->getDoctrine()->getManager();        
         $DQLquery = $entityManager  ->createQuery($dql)
                                     ->setParameter('ids', $arrayOfCandidatesId)
-
                                     ->setFirstResult($page * $elementsPerPage  - $elementsPerPage)
                                     ->setMaxResults($elementsPerPage);
-
-       
+   
         $candidatesPages = new Paginator($DQLquery);  
         $totalElements = count($candidatesPages);  
 
         $returnData=[];
         foreach($candidatesPages as $candidate) {          
-            
             $element = [    'email' => $candidate->getEmail(),
                             'firstName' => $candidate->getFirstName(),
                             'lastName' => $candidate->getLastName()
@@ -157,7 +151,10 @@ class CandidateController extends AbstractController
             if ($data['notes'] == 1) array_push($element, ['notes' => $candidate->getNotes()] );
             
             array_push($returnData, $element);
-        }   
+        }
+
+        if (empty($returnData)) return new Response ("No data", Response::HTTP_NOT_FOUND);
+
         $returnResponse = ["data" => $returnData, "total" => $totalElements];
                    
         return $this->json($returnResponse);       
