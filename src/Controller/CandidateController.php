@@ -7,8 +7,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
 
 use Symfony\Component\Config\Definition\Exception\Exception;
-use Symfony\Component\Validator\Exception\OutOfBoundsException;
-
 
 use Symfony\Component\Routing\Annotation\Route;
 
@@ -18,6 +16,9 @@ use App\Entity\Product;
 use App\Repository\ProductRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Tools\Pagination\Paginator;
+
+
 
 class CandidateController extends AbstractController
 {
@@ -42,7 +43,10 @@ class CandidateController extends AbstractController
          *        
          *      //show or not tag and notes: 1 -  show, 0 - not show
          *      "tag": 1,  
-         *      "notes": 0   
+         *      "notes": 0,
+         * 
+         *      "page": 3,          //count from 1
+         *      "elements": 3  //max 20
          * }
          */
 
@@ -66,31 +70,35 @@ class CandidateController extends AbstractController
 
     try 
     {
-        $data = (valid_json($json)) ? json_decode($json, true) : throw new JsonException('Invalid json'); 
+        $data = (valid_json($json)) ? json_decode($json, true) : throw new Exception('Invalid json'); 
        
-        if (!isset($data['phrase'])) throw new OutOfBoundsException('Invalid key for PHRASE');
-        $phrase = (strlen($data['phrase']) < 2000 ) ? $data['phrase'] : throw new \RangeException ("Invalid length of PHRASE");
+        if (!isset($data['phrase'])) throw new Exception('Invalid key for PHRASE');
+        $phrase = (strlen($data['phrase']) < 2000 ) ? $data['phrase'] : throw new Exception ("Invalid length of PHRASE");
                      
-        if (!isset($data['date1']) or  !isset($data['date2']) ) throw new OutOfBoundsException ("No valid key for date");
+        if (!isset($data['date1']) or  !isset($data['date2']) ) throw new Exception ("Ivalid key for date");
         if ( valid_date($data['date1']) and valid_date($data['date2']) ) {$date1 = $data['date1']; $date2 = $data['date2'];}
-        else throw new \RangeException ("Invalid value of date");
+        else throw new Exception ("Invalid value of date");
         
-        if (!isset($data['sorting']) ) throw new OutOfBoundsException ("No valid key for sorting arrays");
+        if (!isset($data['sorting']) ) throw new Exception ("Ivalid key for sorting arrays");
         foreach ($data['sorting'] as $i=>$value) {
-            if ( !in_array  (
-                                key($data['sorting'][$i]), ["first_name","last_name", "tag"]
-                            ) 
-                ) throw new \RangeException ("Invalid sorting fields");
-            if ( !in_array (
-                                $data['sorting'][$i][key($data['sorting'][$i])], [0,1,2] 
-                            ) 
-                ) throw new \RangeException ("Invalid sorting values");
+            if ( !in_array  (  key($data['sorting'][$i]), ["first_name","last_name", "tag"] ) 
+                ) throw new Exception ("Invalid sorting fields");
+            if ( !in_array (  $data['sorting'][$i][key($data['sorting'][$i])], [0,1,2]  ) 
+                ) throw new Exception ("Invalid sorting values");
         }
        
-        if (!isset($data['tag']) or  !isset($data['notes']) ) throw new OutOfBoundsException ("No record of TAG/NOTES");
-        if ( !in_array($data['tag'], [0,1]) or !in_array($data['notes'], [0,1] ) ) throw new \RangeException ("Invalid tag/notes values");
+        if (!isset($data['tag']) or  !isset($data['notes']) ) throw new Exception ("Invalid key for TAG/NOTES");
+        if ( !in_array($data['tag'], [0,1]) or !in_array($data['notes'], [0,1] ) ) throw new Exception ("Invalid tag/notes value");
+
+        if (!isset($data['page']) or  !isset($data['elements']) ) throw new Exception ("Invalid key for pagination");
+        if ( !is_int($data['page']) or $data['page'] == 0) throw new Exception ("Invalid value of PAGE");
+        else $page = $data['page'];
+
+        if ( !is_int($data['elements']) or $data['elements'] > 20  or $data['elements'] == 0) throw new Exception ("Invalid value of ELEMENTS");
+        else $elementsPerPage = $data['elements'];
+
     }
-    catch (\Exception $e) {
+    catch (Exception $e) {
         return new Response ($e->getMessage(), Response::HTTP_BAD_REQUEST);
     }
 
@@ -110,36 +118,48 @@ class CandidateController extends AbstractController
 
                 */
                 
-                $arrayOfCandidatesId = [1,2,3,4,5,6];
+                $arrayOfCandidatesId = [1,2,3,4,5,6,7,8,9,10,11,12];
                 return $arrayOfCandidatesId;
         }
         $arrayOfCandidatesId = candidate_elastic_search($phrase, $date1, $date2);
 
-//selecting needed columns from Candidates by ID and ordering:        
+//selecting from Candidates by ID and ordering:        
         $order = [];
         foreach ($data['sorting'] as $i=>$value) {
             if ( $data['sorting'][$i][key(  $data['sorting'][$i] )] == 1 ) $order[$i] = 'c.'.key($data['sorting'][$i]).' ASC';
             if ( $data['sorting'][$i][key(  $data['sorting'][$i] )] == 2 ) $order[$i] = 'c.'.key($data['sorting'][$i]).' DESC';
         }
         $orderBy = (empty($order) ) ? '' : 'ORDER BY '.implode(', ', $order);
-       
-        $optionalColumns = [];
-        if ($data['tag'] == 1) array_push($optionalColumns,', c.tag');
-        if ($data['notes'] == 1) array_push($optionalColumns,', c.notes');
-        $stringOptionalColumns = implode('', $optionalColumns);
 
-        $dql = "SELECT c.email, c.first_name, c.last_name $stringOptionalColumns
+        $dql = "SELECT c
                 FROM App\Entity\Candidate c 
                 WHERE c.id IN (:ids) 
                 $orderBy";
-
         $entityManager = $this->getDoctrine()->getManager();        
         $DQLquery = $entityManager  ->createQuery($dql)
-                                    ->setParameter('ids', $arrayOfCandidatesId);
-        
-        $result = $DQLquery->getResult();   //TODO - pagination
-    
+                                    ->setParameter('ids', $arrayOfCandidatesId)
 
-        return $this->json($result);       //TODO - pagination
+                                    ->setFirstResult($page * $elementsPerPage  - $elementsPerPage)
+                                    ->setMaxResults($elementsPerPage);
+
+       
+        $candidatesPages = new Paginator($DQLquery);  
+        $totalElements = count($candidatesPages);  
+
+        $returnData=[];
+        foreach($candidatesPages as $candidate) {          
+            
+            $element = [    'email' => $candidate->getEmail(),
+                            'firstName' => $candidate->getFirstName(),
+                            'lastName' => $candidate->getLastName()
+                        ];
+            if ($data['tag'] == 1) array_push($element, ['tag' => $candidate->getTag()] );
+            if ($data['notes'] == 1) array_push($element, ['notes' => $candidate->getNotes()] );
+            
+            array_push($returnData, $element);
+        }   
+        $returnResponse = ["data" => $returnData, "total" => $totalElements];
+                   
+        return $this->json($returnResponse);       
     }
 }
